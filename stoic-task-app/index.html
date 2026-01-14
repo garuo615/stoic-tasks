@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stoic Task Manager</title>
+    <style>
+        :root {
+            --bg-color: #f4f4f5;
+            --text-color: #333;
+            --accent-action: #2563eb; /* 青：活動 */
+            --accent-rest: #16a34a;   /* 緑：休憩 */
+            --card-bg: #ffffff;
+        }
+
+        body {
+            font-family: 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 600px;
+        }
+
+        h1 { font-size: 1.5rem; text-align: center; margin-bottom: 20px; }
+        h2 { font-size: 1.1rem; border-bottom: 2px solid #ddd; padding-bottom: 5px; margin-top: 30px; }
+
+        /* 入力エリア */
+        .input-group {
+            background: var(--card-bg);
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        input[type="text"] {
+            flex-grow: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 16px;
+        }
+
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            color: white;
+            transition: opacity 0.2s;
+        }
+        button:hover { opacity: 0.9; }
+
+        .btn-action { background-color: var(--accent-action); }
+        .btn-rest { background-color: var(--accent-rest); }
+        .btn-preset { background-color: #64748b; font-size: 0.8rem; padding: 5px 10px;}
+        .btn-delete { background-color: #ef4444; margin-left: auto; font-size: 0.8rem; padding: 5px 10px;}
+
+        /* プリセットエリア */
+        .preset-area {
+            margin-top: 10px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .preset-tag {
+            background: #e2e8f0;
+            color: #475569;
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 0.9rem;
+            cursor: pointer;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .preset-tag:hover { background: #cbd5e1; }
+        .preset-tag span { pointer-events: none; } /* アイコン用 */
+
+        /* タスクリスト */
+        ul { list-style: none; padding: 0; }
+        
+        li {
+            background: var(--card-bg);
+            margin-bottom: 8px;
+            padding: 12px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+            border-left: 5px solid #ddd;
+        }
+
+        li.type-action { border-left-color: var(--accent-action); }
+        li.type-rest { border-left-color: var(--accent-rest); }
+
+        li.completed {
+            opacity: 0.6;
+            text-decoration: line-through;
+            background: #eee;
+        }
+
+        input[type="checkbox"] {
+            transform: scale(1.5);
+            margin-right: 15px;
+            cursor: pointer;
+        }
+
+        .task-text { flex-grow: 1; }
+
+        /* モード切替ラジオボタン風 */
+        .mode-select {
+            display: flex;
+            gap: 10px;
+            width: 100%;
+            margin-bottom: 5px;
+        }
+        .radio-label {
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>My Stoic Tasks</h1>
+
+    <div class="input-group">
+        <div class="mode-select">
+            <label class="radio-label"><input type="radio" name="taskType" value="action" checked> 🔵 活動 (Action)</label>
+            <label class="radio-label"><input type="radio" name="taskType" value="rest"> 🟢 休憩 (Rest)</label>
+        </div>
+        <input type="text" id="taskInput" placeholder="新しいタスクを入力...">
+        <button onclick="addTask()" class="btn-action" id="addBtn">追加</button>
+        <button onclick="saveAsPreset()" class="btn-preset">これをプリセット登録</button>
+    </div>
+
+    <div style="margin-top: 10px;">
+        <small>▼ よく使う項目 (タップで追加 / 長押しで削除)</small>
+        <div id="presetList" class="preset-area">
+            </div>
+    </div>
+
+    <h2>Today's Tasks</h2>
+    <ul id="taskList">
+        </ul>
+</div>
+
+<script>
+    // 初期データ読み込み
+    let tasks = JSON.parse(localStorage.getItem('stoicTasks')) || [];
+    let presets = JSON.parse(localStorage.getItem('stoicPresets')) || [
+        { title: "15分仮眠", type: "rest" },
+        { title: "メールチェック", type: "action" }
+    ];
+
+    // 起動時の描画
+    renderTasks();
+    renderPresets();
+
+    // --- 機能: タスク追加 ---
+    function addTask(title = null, type = null) {
+        const input = document.getElementById('taskInput');
+        const taskTitle = title || input.value;
+        
+        // タイプ指定がなければラジオボタンから取得
+        if (!type) {
+            const radios = document.getElementsByName('taskType');
+            for (const radio of radios) {
+                if (radio.checked) type = radio.value;
+            }
+        }
+
+        if (taskTitle.trim() === '') return;
+
+        const newTask = {
+            id: Date.now(),
+            title: taskTitle,
+            type: type,
+            completed: false
+        };
+
+        tasks.push(newTask);
+        saveData();
+        renderTasks();
+        input.value = ''; // 入力欄クリア
+    }
+
+    // --- 機能: プリセットとして保存 ---
+    function saveAsPreset() {
+        const input = document.getElementById('taskInput');
+        const title = input.value;
+        if (title.trim() === '') {
+            alert("入力欄の内容をプリセットに登録します。まずは文字を入力してください。");
+            return;
+        }
+
+        let type = "action";
+        const radios = document.getElementsByName('taskType');
+        for (const radio of radios) {
+            if (radio.checked) type = radio.value;
+        }
+
+        presets.push({ title: title, type: type });
+        localStorage.setItem('stoicPresets', JSON.stringify(presets));
+        renderPresets();
+        alert(`「${title}」をプリセットに追加しました`);
+    }
+
+    // --- 機能: タスク完了切り替え ---
+    function toggleComplete(id) {
+        const task = tasks.find(t => t.id === id);
+        if (task) {
+            task.completed = !task.completed;
+            saveData();
+            renderTasks();
+        }
+    }
+
+    // --- 機能: タスク削除 ---
+    function deleteTask(id) {
+        if(confirm("このタスクを削除しますか？")) {
+            tasks = tasks.filter(t => t.id !== id);
+            saveData();
+            renderTasks();
+        }
+    }
+
+    // --- 機能: プリセット削除 ---
+    function deletePreset(index) {
+        if(confirm("このプリセットを削除しますか？")) {
+            presets.splice(index, 1);
+            localStorage.setItem('stoicPresets', JSON.stringify(presets));
+            renderPresets();
+        }
+    }
+
+    // --- 描画関数 ---
+    function renderTasks() {
+        const list = document.getElementById('taskList');
+        list.innerHTML = '';
+        
+        // 未完了を上に、完了済みを下に並び替え
+        tasks.sort((a, b) => a.completed - b.completed);
+
+        tasks.forEach(task => {
+            const li = document.createElement('li');
+            li.className = `type-${task.type} ${task.completed ? 'completed' : ''}`;
+            li.innerHTML = `
+                <input type="checkbox" onchange="toggleComplete(${task.id})" ${task.completed ? 'checked' : ''}>
+                <span class="task-text">${task.title}</span>
+                <button onclick="deleteTask(${task.id})" class="btn-delete">×</button>
+            `;
+            list.appendChild(li);
+        });
+    }
+
+    function renderPresets() {
+        const list = document.getElementById('presetList');
+        list.innerHTML = '';
+
+        presets.forEach((preset, index) => {
+            const tag = document.createElement('div');
+            tag.className = 'preset-tag';
+            // 活動なら青丸、休憩なら緑丸をつける
+            const icon = preset.type === 'action' ? '🔵' : '🟢';
+            tag.innerHTML = `<span>${icon}</span> ${preset.title}`;
+            
+            // クリックでタスク追加
+            tag.onclick = () => addTask(preset.title, preset.type);
+            
+            // 右クリック（PC）または長押し（スマホ想定）で削除
+            tag.oncontextmenu = (e) => {
+                e.preventDefault();
+                deletePreset(index);
+            };
+
+            list.appendChild(tag);
+        });
+    }
+
+    function saveData() {
+        localStorage.setItem('stoicTasks', JSON.stringify(tasks));
+    }
+
+    // UI調整: ラジオボタンでボタン色を変える
+    const radios = document.getElementsByName('taskType');
+    const addBtn = document.getElementById('addBtn');
+    radios.forEach(r => {
+        r.addEventListener('change', (e) => {
+            if(e.target.value === 'rest') {
+                addBtn.className = 'btn-rest';
+            } else {
+                addBtn.className = 'btn-action';
+            }
+        });
+    });
+</script>
+
+</body>
+</html>
